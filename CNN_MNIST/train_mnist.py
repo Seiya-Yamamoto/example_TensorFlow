@@ -85,7 +85,9 @@ def main():
 
     # 訓練
     with tf.name_scope('train'):
-        train_step = tf.train.GradientDescentOptimizer(0.01).minimize(loss)
+        global_step = tf.Variable(0, name='global_step', trainable=False)
+        train_step = tf.train.GradientDescentOptimizer(
+            0.01).minimize(loss, global_step=global_step)
 
     # 評価
     with tf.name_scope('accuracy'):
@@ -100,15 +102,27 @@ def main():
     # 全てのログをマージ
     summary_op = tf.summary.merge_all()
 
+    saver = tf.train.Saver(max_to_keep=3)
+
     with tf.Session() as sess:
 
-        # 変数の初期化を実行
-        sess.run(init)
+        # 保存したモデルを読み込む
+        ckpt_state = tf.train.get_checkpoint_state('./ckpt/')
+        if ckpt_state:
+            last_model = ckpt_state.model_checkpoint_path
+            saver.restore(sess, last_model)
+            print('model was loaded:', last_model)
+        else:
+            # 変数の初期化を実行
+            sess.run(init)
+            print('model initialized')
 
         # 取得したログをファイルに書き出す
         summary_writer = tf.summary.FileWriter('./logs', sess.graph)
 
-        for step in range(1, 1501):
+        last_step = sess.run(global_step)
+        for i in range(1, 1501):
+            step = last_step + i
             train_images, train_labels = mnist.train.next_batch(50)
             sess.run(train_step, feed_dict={x: train_images, y: train_labels})
 
@@ -119,9 +133,14 @@ def main():
                 # ログ情報のプロトコルバッファを書き込む
                 summary_writer.add_summary(summary_str, step)
 
+                # accuracyを計算
                 acc_val = sess.run(accuracy, feed_dict={
                                    x: test_images, y: test_labels})
                 print('Step %d: Test accuracy = %.2f' % (step, acc_val))
+
+                # 学習したモデルを保存
+                saver.save(sess, './ckpt/model', global_step=step,
+                           write_meta_graph=False)
 
 
 if __name__ == '__main__':
